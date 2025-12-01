@@ -76,6 +76,8 @@ Xhat_out2 = get_x_sq(Xhat_out)
 D_out = np.concatenate((Xhat_out, Xhat_out2, E), axis=1)
 D_out_2 = D_out.T @ D_out
 
+print(f"D_out shape: {D_out.shape}")
+print(f"D_out_2 condition number: {np.linalg.cond(D_out_2):.2e}")
 print("\033[1m Done \033[0m")
 
 ###########################
@@ -83,30 +85,21 @@ print("\033[1m Load derived quantities from all training trajectories \033[0m")
 
 ENGINE = "h5netcdf"
 
-# TODO: UPDATE THESE PATHS to match your actual training files on HPC
-# These should be the SAME files you used in 01_OpInf_preprocessing_multi_IC.py
-data_dir = "/work2/10407/anthony50102/frontera/data/hw2d_sim/t600_d64x64_sliced16000/"
 training_files = [
-    data_dir + "hw2d_sim_step0.025_end1_pts512_c11.5_k015_N3_nu5e-8_20250205112639_16363_1.h5",
-    data_dir + "hw2d_sim_step0.025_end1_pts512_c11_k015_N3_nu5e-8_20250205112639_16363_1.h5",
-    # Add more training files if you used more in preprocessing
+    "/storage1/HW/paper/1.0_300_training_IC1.h5",
+    "/storage1/HW/paper/1.0_300_training_IC2.h5",
+    "/storage1/HW/paper/1.0_300_training_IC3.h5",
+    "/storage1/HW/paper/1.0_300_training_IC4.h5",
+    "/storage1/HW/paper/1.0_300_training_IC5.h5",
 ]
 
 Gamma_n_list = []
 Gamma_c_list = []
 
 for file_path in training_files:
-    print(f"  Loading gamma data from: {file_path}")
-    fh = xr.open_dataset(file_path, engine=ENGINE, phony_dims='sort')
-    
-    # Check if these fields exist in your data
-    if "gamma_n" in fh and "gamma_c" in fh:
-        Gamma_n_list.append(fh["gamma_n"].values)
-        Gamma_c_list.append(fh["gamma_c"].values)
-    else:
-        print(f"  WARNING: gamma_n/gamma_c not found in {file_path}")
-        print(f"  Available variables: {list(fh.data_vars)}")
-        raise ValueError("Required variables gamma_n/gamma_c not found in training files")
+    fh = xr.open_dataset(file_path, engine=ENGINE)
+    Gamma_n_list.append(fh["gamma_n"].data)
+    Gamma_c_list.append(fh["gamma_c"].data)
 
 # Concatenate all trajectories
 Gamma_n = np.concatenate(Gamma_n_list)
@@ -121,15 +114,27 @@ std_Gamma_c_ref = np.std(Gamma_c, ddof=1)
 Y_Gamma = np.vstack((Gamma_n, Gamma_c))
 
 print(f"Gamma_n shape: {Gamma_n.shape}")
+print(f"Gamma_c shape: {Gamma_c.shape}")
+print(f"Y_Gamma shape: {Y_Gamma.shape}")
+print(f"X_out shape (for output learning): {X_out.shape}")
+print(f"Shape compatibility check: Y_Gamma cols ({Y_Gamma.shape[1]}) vs X_out rows ({X_out.shape[0]})")
+
+if Y_Gamma.shape[1] != X_out.shape[0]:
+    raise ValueError(f"Shape mismatch: Y_Gamma has {Y_Gamma.shape[1]} columns but X_out has {X_out.shape[0]} rows")
+
 print(f"Mean Gamma_n: {mean_Gamma_n_ref:.4f}, Std: {std_Gamma_n_ref:.4f}")
 print(f"Mean Gamma_c: {mean_Gamma_c_ref:.4f}, Std: {std_Gamma_c_ref:.4f}")
 
-# Safety checks for NaN/Inf
-if np.any(np.isnan(Gamma_n)) or np.any(np.isnan(Gamma_c)):
-    raise ValueError("ERROR: NaN values found in Gamma data!")
-if np.any(np.isinf(Gamma_n)) or np.any(np.isinf(Gamma_c)):
-    raise ValueError("ERROR: Inf values found in Gamma data!")
-    
+# Check for NaNs in gamma data
+if np.any(np.isnan(Gamma_n)):
+    print("\033[91m WARNING: NaNs detected in Gamma_n training data! \033[0m")
+if np.any(np.isnan(Gamma_c)):
+    print("\033[91m WARNING: NaNs detected in Gamma_c training data! \033[0m")
+if np.any(np.isinf(Gamma_n)):
+    print("\033[91m WARNING: Infs detected in Gamma_n training data! \033[0m")
+if np.any(np.isinf(Gamma_c)):
+    print("\033[91m WARNING: Infs detected in Gamma_c training data! \033[0m")
+
 print("\033[1m Done \033[0m")
 
 ###########################
@@ -185,6 +190,14 @@ for alpha_state_lin in ridge_alf_lin_all:
         Xhat_test_pred_scaled = (X_test_pred - mean_Xhat[np.newaxis, :]) / scaling_Xhat
         Xhat_2_test_pred_scaled = get_x_sq(Xhat_test_pred_scaled)
 
+        # Check for NaNs in scaled test predictions
+        if np.any(np.isnan(Xhat_test_pred_scaled)):
+            print("  Skipping: NaN in scaled test predictions")
+            continue
+        if np.any(np.isinf(Xhat_test_pred_scaled)):
+            print("  Skipping: Inf in scaled test predictions")
+            continue
+
         # Learn output operators (on training data)
         for n, alpha_out_lin in enumerate(gamma_reg_lin):
             for m, alpha_out_quad in enumerate(gamma_reg_quad):
@@ -201,7 +214,21 @@ for alpha_state_lin in ridge_alf_lin_all:
                 regularizer = np.diag(regg)
                 D_out_reg = D_out_2 + regularizer
 
+                # Check condition number
+                cond_num = np.linalg.cond(D_out_reg)
+                if cond_num > 1e15:
+                    print(f"    Skipping: Poor conditioning (cond={cond_num:.2e})")
+                    continue
+
                 O = np.linalg.solve(D_out_reg, np.dot(D_out.T, Y_Gamma.T)).T
+
+                # Check for NaNs in output operators
+                if np.any(np.isnan(O)):
+                    print("    Skipping: NaN in output operators O")
+                    continue
+                if np.any(np.isinf(O)):
+                    print("    Skipping: Inf in output operators O")
+                    continue
 
                 C = O[:, :r]
                 G = O[:, r : r + s]
@@ -213,6 +240,14 @@ for alpha_state_lin in ridge_alf_lin_all:
                     + G @ Xhat_2_test_pred_scaled.T
                     + c[:, np.newaxis]
                 )
+
+                # Check for NaNs in predictions
+                if np.any(np.isnan(Y_test_pred)):
+                    print("    Skipping: NaN in Y_test_pred")
+                    continue
+                if np.any(np.isinf(Y_test_pred)):
+                    print("    Skipping: Inf in Y_test_pred")
+                    continue
 
                 ts_Gamma_n_test = Y_test_pred[0, :]
                 ts_Gamma_c_test = Y_test_pred[1, :]
@@ -230,16 +265,6 @@ for alpha_state_lin in ridge_alf_lin_all:
 
                 mean_err_Gamma_c = np.abs(mean_Gamma_c_ref - mean_Gamma_c_test) / mean_Gamma_c_ref
                 std_err_Gamma_c = np.abs(std_Gamma_c_ref - std_Gamma_c_test) / std_Gamma_c_ref
-
-                # Skip if any errors are NaN or Inf (indicates bad output operators)
-                if (np.isnan(mean_err_Gamma_n) or np.isnan(std_err_Gamma_n) or 
-                    np.isnan(mean_err_Gamma_c) or np.isnan(std_err_Gamma_c) or
-                    np.isinf(mean_err_Gamma_n) or np.isinf(std_err_Gamma_n) or
-                    np.isinf(mean_err_Gamma_c) or np.isinf(std_err_Gamma_c)):
-                    print(
-                        "    ✗ NaN/Inf in error computation - skipping"
-                    )
-                    continue
 
                 # Check if model meets accuracy criteria
                 if (
