@@ -1,3 +1,6 @@
+[tool.setuptools]
+packages = ["opinf_for_hw", "visualization"]
+
 [build-system]
 build-backend = "setuptools.build_meta"
 requires = ["setuptools"]

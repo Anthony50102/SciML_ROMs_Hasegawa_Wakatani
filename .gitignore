@@ -162,3 +162,6 @@ dmypy.json
 *.snm
 *.synctex.gz
 *.toc
+
+# Personal Notes
+*README_multi_IC.md
