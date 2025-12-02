@@ -54,12 +54,6 @@ r_all = [64, 74, 82, 90, 100]
 # gamma_reg_lin   = np.linspace(1e-3, 1e2, 20)
 # gamma_reg_quad  = np.linspace(1e-3, 1e2, 20)
 
-ridge_alf_lin_all = np.linspace(1e2, 1e5, 10)
-ridge_alf_quad_all = np.linspace(1e11, 1e14, 10)
-
-gamma_reg_lin = np.linspace(1e-4, 1e1, 20)
-gamma_reg_quad = np.linspace(1e-3, 1e2, 20)
-
 time_steps_rec = [
     999,
     1999,
@@ -78,7 +72,3 @@ time_steps_rec = [
     18999,
     20000,
 ]
-
-path_to_data = "/storage1/HW/OpInf_exp/training_c1_1.0_no_norm/"
-POD_file = path_to_data + "POD.npz"
-Xhat_file = path_to_data + "X_hat.npy"

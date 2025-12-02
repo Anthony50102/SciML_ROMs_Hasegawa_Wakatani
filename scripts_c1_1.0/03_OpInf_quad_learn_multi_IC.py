@@ -1,7 +1,16 @@
+import argparse
 from opinf_for_hw.data_proc import *
 from opinf_for_hw.postproc import *
 
-from config.HW import *
+argparse = argparse.ArgumentParser()
+argparse.add_argument("--c", type=bool, default=False, help="Use cluster settings")
+args = argparse.parse_args()
+if args.c:
+    print(f"\033[1m Using cluster settings \033[0m")
+    from config.cluster import *
+else:
+    print(f"\033[1m Using local settings \033[0m")
+    from config.local import *
 
 import xarray as xr
 
