@@ -259,3 +259,18 @@ def compress_H(H):
 # x = 0.5*t**2
 # print x
 # print ddt(x,dt)
+
+import xarray as xr
+def loader(path, ENGINE="h5netcdf"):
+    try:
+        fh = xr.open_dataset(path, engine=ENGINE)
+        return fh
+    except Exception as e:
+        print(f"\033[91m ERROR: Could not open file {path}: {e} \033[0m")
+        print("  Retrying with phony_dims='sort'...")
+        try:
+            fh = xr.open_dataset(path, engine=ENGINE, phony_dims="sort")
+            return fh
+        except Exception as e:
+            print(f"\033[91m ERROR: Could not open file {path} with phony_dims: {e} \033[0m")
+

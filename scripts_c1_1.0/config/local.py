@@ -1,7 +1,7 @@
 # Local testing configurations
-from HW import *
+from .HW import *
 
-data_dir = "/work2/10407/anthony50102/frontera/data/hw2d_sim/t600_d256x256_raw" # Raw data directory
+data_dir = "/work2/10407/anthony50102/frontera/data/hw2d_sim/t600_d256x256_raw/" # Raw data directory
 output_path = "/work2/10407/anthony50102/frontera/data/sciml_roms_hasegawa_wakatani/" # Output directory
 training_files = [
     data_dir + "hw2d_ss.025_time1000_grid512_c11.5_k0.15_N3_nu5e-8_down8.h5",

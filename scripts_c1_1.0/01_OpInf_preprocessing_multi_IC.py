@@ -23,10 +23,11 @@ if __name__ == "__main__":
     test_file = "hw2d_ss.025_time1000_grid512_c12_k0.15_N3_nu5e-8_down8.h5"
 
     Q_train_list = []
+    Q_test_list = []
     
     for i, file_path in enumerate(training_files):
         print(f"  Loading IC {i+1}: {file_path}")
-        fh = xr.open_dataset(file_path, engine=ENGINE)
+        fh = xr.open_dataset(file_path, engine=ENGINE, phony_dims="sort")
         
         # TODO: These simulations don't include explicit x,y spatial coordinates in the dataset.
         # We infer the spatial grid structure from the shape of the density/phi arrays.
@@ -57,25 +58,35 @@ if __name__ == "__main__":
     print(f"\n\033[1m Combined training data shape: {Q_train.shape}\033[0m")
 
     # Load test data
-    print(f"\n\033[1m Loading test IC: {test_file}\033[0m")
-    fh_test = xr.open_dataset(test_file, engine=ENGINE)
-    
-    # TODO: Same spatial grid inference as above
-    density_test = fh_test["density"].values
-    phi_test = fh_test["phi"].values
-    
-    if density_test.ndim == 2:
-        n_time = density_test.shape[0]
-        grid_size = int(np.sqrt(density.shape[1])) 
-        density_test = density_test.reshape(n_time, grid_size, grid_size)
-        phi_test = phi_test.reshape(n_time, grid_size, grid_size)
-    
-    Q_test = np.stack([density_test, phi_test], axis=0)
-    n_field, n_time, n_y, n_x = Q_test.shape
-    Q_test = Q_test.reshape(n_field * n_y * n_x, n_time)
-    
-    print(f"Test data shape: {Q_test.shape}")
+    for i, file_path in enumerate(test_files):
+        print(f" Loading IC {i+1}: {file_path}")
+        fh = xr.open_dataset(file_path, engine=ENGINE, phony_dims="sort")
+        
+        # Get density and phi as numpy arrays
+        density = fh["density"].values  # Shape should be (time, 64*64) or (time, 64, 64)
+        phi = fh["phi"].values
+        
+        # If already 3D (time, y, x), use as-is. If 2D (time, flattened), reshape to 3D
+        if density.ndim == 2:
+            # Assume flattened: (time, 64*64) -> (time, 64, 64)
+            n_time = density.shape[0]
+            grid_size = int(np.sqrt(density.shape[1])) 
+            density = density.reshape(n_time, grid_size, grid_size)
+            phi = phi.reshape(n_time, grid_size, grid_size)
+        
+        # Stack fields: (time, y, x) -> (field, time, y, x) -> flatten to (field*y*x, time)
+        Q_ic = np.stack([density, phi], axis=0)  # Shape: (2, time, y, x)
+        n_field, n_time, n_y, n_x = Q_ic.shape
+        Q_ic = Q_ic.reshape(n_field * n_y * n_x, n_time)  # Shape: (2*64*64, time)
+        
+        Q_test_list.append(Q_ic)
+        print(f"    Shape: {Q_ic.shape}")
 
+    # Concatenate all test trajectories along time axis
+    Q_test = np.hstack(Q_test_list)
+    print(f"\n\033[1m Combined test data shape: {Q_train.shape}\033[0m")
+    
+    
     # Compute POD basis from combined training data
     print("\n\033[1m Computing POD basis from all training trajectories...\033[0m")
     U, S, _ = np.linalg.svd(Q_train, full_matrices=False)
