@@ -113,15 +113,16 @@ if __name__ == "__main__":
     # Save initial conditions for later use
     print("\n\033[1m Saving initial conditions...\033[0m")
     train_ICs = np.array([Q_train_list[i][:, 0] for i in range(len(Q_train_list))])
-    test_IC = Q_test[:, 0]
+    test_ICs = np.array([Q_test_list[i][:, 0] for i in range(len(Q_test_list))])
     
     np.savez(
         output_path + "initial_conditions_multi_IC.npz",
         train_ICs=train_ICs,
-        test_IC=test_IC,
+        test_ICs=test_ICs,
         train_ICs_reduced=np.array([Xhat_train[i*Q_train_list[0].shape[1], :] 
                                      for i in range(len(Q_train_list))]),
-        test_IC_reduced=Xhat_test[0, :]
+        test_ICs_reduced=np.array([Xhat_test[i*Q_test_list[0].shape[1], :] 
+                                     for i in range(len(Q_test_list))]),
     )
 
     print("\n\033[1m Done.\033[0m")
