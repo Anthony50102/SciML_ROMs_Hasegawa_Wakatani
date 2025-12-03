@@ -176,50 +176,50 @@ for alpha_state_lin in ridge_alf_lin_all:
 
         print(f"  L2 error: {l2_error:.6e} | Relative L2: {relative_l2_error:.6e}")
 
-        # Learn output operators for this state model
-        for n, alpha_out_lin in enumerate(gamma_reg_lin):
-            for m, alpha_out_quad in enumerate(gamma_reg_quad):
-                regg = np.zeros(d_out)
-                regg[:r] = alpha_out_lin
-                regg[r : r + s] = alpha_out_quad
-                regg[r + s :] = alpha_out_lin
-                regularizer = np.diag(regg)
-                D_out_reg = D_out_2 + regularizer
+        # # Learn output operators for this state model
+        # for n, alpha_out_lin in enumerate(gamma_reg_lin):
+        #     for m, alpha_out_quad in enumerate(gamma_reg_quad):
+        #         regg = np.zeros(d_out)
+        #         regg[:r] = alpha_out_lin
+        #         regg[r : r + s] = alpha_out_quad
+        #         regg[r + s :] = alpha_out_lin
+        #         regularizer = np.diag(regg)
+        #         D_out_reg = D_out_2 + regularizer
 
-                # Check condition number
-                cond_num = np.linalg.cond(D_out_reg)
-                if cond_num > 1e15:
-                    continue
+        #         # Check condition number
+        #         cond_num = np.linalg.cond(D_out_reg)
+        #         if cond_num > 1e15:
+        #             continue
 
-                O_out = np.linalg.solve(D_out_reg, np.dot(D_out.T, Y_Gamma.T)).T
+        #         O_out = np.linalg.solve(D_out_reg, np.dot(D_out.T, Y_Gamma.T)).T
 
-                # Check for NaNs in output operators
-                if np.any(np.isnan(O_out)) or np.any(np.isinf(O_out)):
-                    continue
+        #         # Check for NaNs in output operators
+        #         if np.any(np.isnan(O_out)) or np.any(np.isinf(O_out)):
+        #             continue
 
-                C = O_out[:, :r]
-                G = O_out[:, r : r + s]
-                c = O_out[:, r + s]
+        #         C = O_out[:, :r]
+        #         G = O_out[:, r : r + s]
+        #         c = O_out[:, r + s]
 
-                # If this is the best model so far, save it
-                if l2_error < best_l2_error:
-                    best_l2_error = l2_error
-                    best_model = {
-                        'A': A.copy(),
-                        'F': F.copy(),
-                        'C': C.copy(),
-                        'G': G.copy(),
-                        'c': c.copy(),
-                        'relative_l2_error': relative_l2_error,
-                        'absolute_l2_error': l2_error
-                    }
-                    best_alphas = {
-                        'alpha_state_lin': alpha_state_lin,
-                        'alpha_state_quad': alpha_state_quad,
-                        'alpha_out_lin': alpha_out_lin,
-                        'alpha_out_quad': alpha_out_quad
-                    }
-                    print(f"  ✓ New best model! L2 error: {l2_error:.6e}")
+        # If this is the best model so far, save it
+        if l2_error < best_l2_error:
+            best_l2_error = l2_error
+            best_model = {
+                'A': A.copy(),
+                'F': F.copy(),
+                # 'C': C.copy(),
+                # 'G': G.copy(),
+                # 'c': c.copy(),
+                'relative_l2_error': relative_l2_error,
+                'absolute_l2_error': l2_error
+            }
+            best_alphas = {
+                'alpha_state_lin': alpha_state_lin,
+                'alpha_state_quad': alpha_state_quad,
+                # 'alpha_out_lin': alpha_out_lin,
+                # 'alpha_out_quad': alpha_out_quad
+            }
+            print(f"  ✓ New best model! L2 error: {l2_error:.6e}")
 
 print("\033[1m Done \033[0m")
 
