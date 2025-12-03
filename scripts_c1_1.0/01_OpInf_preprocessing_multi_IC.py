@@ -19,9 +19,6 @@ if __name__ == "__main__":
 
     ENGINE = "h5netcdf"
 
-    # Test file (6th initial condition)
-    test_file = "hw2d_ss.025_time1000_grid512_c12_k0.15_N3_nu5e-8_down8.h5"
-
     Q_train_list = []
     Q_test_list = []
     

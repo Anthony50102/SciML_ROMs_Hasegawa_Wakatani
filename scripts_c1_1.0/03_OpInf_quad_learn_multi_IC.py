@@ -134,7 +134,7 @@ print("\033[1m Done \033[0m")
 print("\033[1m Load test initial condition \033[0m")
 
 IC_data = np.load(output_path + "initial_conditions_multi_IC.npz")
-test_IC_reduced = IC_data["test_IC_reduced"][:r]
+test_IC_reduced = IC_data["test_ICs_reduced"][:r]
 
 print(f"Test IC shape: {test_IC_reduced.shape}")
 
@@ -250,7 +250,16 @@ if best_model is not None:
         l2_error=best_model['absolute_l2_error'],
         relative_l2_error=best_model['relative_l2_error']
     )
-
     print("\033[1m Best model saved to results/best_model_l2_multi_IC_r" + str(r) + ".npz \033[0m")
+
+    # Save predictions from the best model
+    Y_state_pred = best_model['A'] @ X_state.T + best_model['F'] @ X_state2.T
+    Y_state_pred = Y_state_pred.T
+    np.savez(
+            "results/Y_state_best_model_l2_multi_IC_r" + str(r) + ".npz",
+            Y_state_pred
+    )
+
+
 else:
     print("\033[1m WARNING: No valid models found! \033[0m")
