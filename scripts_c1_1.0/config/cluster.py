@@ -13,8 +13,8 @@ test_files = [
 POD_file = output_path + "POD.npz"
 Xhat_file = output_path + "X_hat.npy"
 
-ridge_alf_lin_all = np.linspace(1e8, 1e4, 4)
-ridge_alf_quad_all = np.linspace(1e20, 1e14, 6)
+ridge_alf_lin_all = np.linspace(1e4, 1e-4, 9)
+ridge_alf_quad_all = np.linspace(1e5, 1e-5, 11)
 
 gamma_reg_lin = np.linspace(1e-4, 1e1, 4)
 gamma_reg_quad = np.linspace(1e-3, 1e2, 5)

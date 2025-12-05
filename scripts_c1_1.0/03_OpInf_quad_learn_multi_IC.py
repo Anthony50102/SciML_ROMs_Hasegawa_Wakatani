@@ -232,33 +232,69 @@ if best_model is not None:
     print(f"Best regularization parameters:")
     print(f"  alpha_state_lin:  {best_alphas['alpha_state_lin']:.2e}")
     print(f"  alpha_state_quad: {best_alphas['alpha_state_quad']:.2e}")
-    print(f"  alpha_out_lin:    {best_alphas['alpha_out_lin']:.2e}")
-    print(f"  alpha_out_quad:   {best_alphas['alpha_out_quad']:.2e}")
+    #print(f"  alpha_out_lin:    {best_alphas['alpha_out_lin']:.2e}")
+    #print(f"  alpha_out_quad:   {best_alphas['alpha_out_quad']:.2e}")
 
     # Save the best model
     np.savez(
-        "results/best_model_l2_multi_IC_r" + str(r) + ".npz",
+        output_path + "best_model_l2_multi_IC_r" + str(r) + ".npz",
         A=best_model['A'],
         F=best_model['F'],
-        C=best_model['C'],
-        G=best_model['G'],
-        c=best_model['c'],
+    #    C=best_model['C'],
+    #    G=best_model['G'],
+    #    c=best_model['c'],
         alpha_state_lin=best_alphas['alpha_state_lin'],
         alpha_state_quad=best_alphas['alpha_state_quad'],
-        alpha_out_lin=best_alphas['alpha_out_lin'],
-        alpha_out_quad=best_alphas['alpha_out_quad'],
+    #    alpha_out_lin=best_alphas['alpha_out_lin'],
+    #    alpha_out_quad=best_alphas['alpha_out_quad'],
         l2_error=best_model['absolute_l2_error'],
         relative_l2_error=best_model['relative_l2_error']
     )
-    print("\033[1m Best model saved to results/best_model_l2_multi_IC_r" + str(r) + ".npz \033[0m")
+    print(f"\033[1m Best model saved to {output_path}/best_model_l2_multi_IC_r" + str(r) + ".npz \033[0m")
 
     # Save predictions from the best model
     Y_state_pred = best_model['A'] @ X_state.T + best_model['F'] @ X_state2.T
     Y_state_pred = Y_state_pred.T
     np.savez(
-            "results/Y_state_best_model_l2_multi_IC_r" + str(r) + ".npz",
+            output_path + "Y_state_best_model_l2_multi_IC_r" + str(r) + ".npz",
             Y_state_pred
     )
+
+    ###########################
+    print("\033[1m Reconstruct training data in original space \033[0m")
+
+    # Load POD basis
+    POD_data = np.load(output_path + "POD_multi_IC.npz")
+    Vr = POD_data["Vr"][:, :r]  # Shape: (2*64*64, r)
+
+    # Get POD predictions from best model
+    A_best = best_model['A']
+    F_best = best_model['F']
+
+    # Reconstruct state trajectory in POD space (one-step predictions)
+    Y_state_pred = A_best @ X_state.T + F_best @ X_state2.T
+    X_recon_pod = Y_state_pred.T  # Shape: (n_timesteps-1, r)
+
+    # Add the initial condition to get full trajectory
+    X_full_pod = np.vstack([X_state[0, :], X_recon_pod])  # Shape: (n_timesteps, r)
+
+    # Project back to full space (NO normalization to undo - data wasn't normalized)
+    X_full_space = X_full_pod @ Vr.T  # Shape: (n_timesteps, 2*64*64)
+
+    print(f"Reconstructed data shape: {X_full_space.shape}")
+    print(f"  (represents {X_full_space.shape[0]} timesteps × {X_full_space.shape[1]//2} spatial points × 2 fields)")
+
+    # Save reconstruction
+    np.savez(
+                output_path + "training_reconstruction_multi_IC_r" + str(r) + ".npz",
+                    X_recon_full=X_full_space,  # Full-dimensional reconstruction
+                        X_recon_pod=X_full_pod,     # POD coefficient trajectory
+                            n_timesteps=X_full_space.shape[0],
+                                n_spatial=X_full_space.shape[1]//2,
+                                    n_fields=2
+                                    )
+
+    print("\033[1m Training reconstruction saved! \033[0m")
 
 
 else:
