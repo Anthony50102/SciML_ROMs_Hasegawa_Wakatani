@@ -1,6 +1,6 @@
 import numpy as np
 from ..utils import *
-from scipy.optimize import broyden1
+# from scipy.optimize import broyden1
 
 
 def forwardEuler(f, u0, t):
@@ -66,25 +66,25 @@ def rk4(f, u0, t):
     return u
 
 
-def backwardEuler(f, u0, t):
-    u = np.zeros((len(t), np.size(u0)))
-    u[0, :] = u0
-    for i in range(len(t) - 1):
-        dt = t[i + 1] - t[i]
-        g = lambda x: (x - u[i, :] - dt * f(x, t[i + 1]))
-        temp = u[i, :] + dt * f(u[i, :], t)
-        u[i + 1, :] = broyden1(g, temp)
-    return u
+# def backwardEuler(f, u0, t):
+#     u = np.zeros((len(t), np.size(u0)))
+#     u[0, :] = u0
+#     for i in range(len(t) - 1):
+#         dt = t[i + 1] - t[i]
+#         g = lambda x: (x - u[i, :] - dt * f(x, t[i + 1]))
+#         temp = u[i, :] + dt * f(u[i, :], t)
+#         u[i + 1, :] = broyden1(g, temp)
+#     return u
 
 
-def crankNicolson(f, u0, t):
-    u = np.zeros((np.size(u0), len(t)))
-    u[:, 0] = u0
-    for i in range(len(t) - 1):
-        dt = t[i + 1] - t[i]
-        g = lambda x: (x - u[:, i] - dt * 0.5 * (f(x, t[i + 1]) + f(u[:, i], t[i])))
-        u[:, i + 1] = broyden1(g, u[:, i])
-    return u
+# def crankNicolson(f, u0, t):
+#     u = np.zeros((np.size(u0), len(t)))
+#     u[:, 0] = u0
+#     for i in range(len(t) - 1):
+#         dt = t[i + 1] - t[i]
+#         g = lambda x: (x - u[:, i] - dt * 0.5 * (f(x, t[i + 1]) + f(u[:, i], t[i])))
+#         u[:, i + 1] = broyden1(g, u[:, i])
+#     return u
 
 
 def semiImp_AFC(A, F, C, u0, t):
