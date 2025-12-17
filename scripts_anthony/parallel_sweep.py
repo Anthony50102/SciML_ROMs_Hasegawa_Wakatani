@@ -22,6 +22,8 @@ References:
 """
 
 import argparse
+import logging
+import sys
 import time
 import numpy as np
 from itertools import product
@@ -32,6 +34,58 @@ from opinf_for_hw.utils.opinf_utils import (
     bprint,
     solve_opinf_difference_model,
 )
+
+
+# =============================================================================
+# LOGGING SETUP
+# =============================================================================
+
+def setup_logging(rank: int, log_file: str = None) -> logging.Logger:
+    """
+    Set up logging for MPI parallel execution.
+    
+    Parameters
+    ----------
+    rank : int
+        MPI rank of this process.
+    log_file : str, optional
+        Path to log file. If None, logs to stderr.
+        
+    Returns
+    -------
+    logging.Logger
+        Configured logger instance.
+    """
+    logger = logging.getLogger(f"opinf_sweep_rank{rank}")
+    logger.setLevel(logging.DEBUG)
+    
+    # Clear any existing handlers
+    logger.handlers = []
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        f'%(asctime)s [Rank {rank:04d}] %(levelname)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # Console handler (stderr so it appears in .err file)
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(logging.INFO if rank != 0 else logging.DEBUG)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    
+    # File handler (only rank 0 writes to main log file)
+    if log_file and rank == 0:
+        file_handler = logging.FileHandler(log_file, mode='w')
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    
+    return logger
+
+
+# Global logger - will be initialized in main()
+logger = None
 
 
 def evaluate_single_hyperparameter_set(
@@ -53,6 +107,7 @@ def evaluate_single_hyperparameter_set(
     s: int,
     n_steps: int,
     training_end: int,
+    store_operators: bool = False,
 ) -> list:
     """
     Evaluate a single state regularization parameter set with all output combinations.
@@ -82,6 +137,9 @@ def evaluate_single_hyperparameter_set(
         Number of time steps for integration.
     training_end : int
         Index marking end of training region.
+    store_operators : bool
+        If True, store the operator matrices (A, F, C, G, c) in results.
+        Set to False during sweep to reduce memory, True for final models.
     
     Returns
     -------
@@ -174,13 +232,8 @@ def evaluate_single_hyperparameter_set(
             total_error = (mean_err_Gamma_n + std_err_Gamma_n +
                           mean_err_Gamma_c + std_err_Gamma_c)
             
-            results.append({
+            result = {
                 'is_nan': False,
-                'A': A.copy(),
-                'F': F.copy(),
-                'C': C.copy(),
-                'G': G.copy(),
-                'c': c.copy(),
                 'total_error': total_error,
                 'mean_err_Gamma_n': mean_err_Gamma_n,
                 'std_err_Gamma_n': std_err_Gamma_n,
@@ -190,7 +243,17 @@ def evaluate_single_hyperparameter_set(
                 'alpha_state_quad': alpha_state_quad,
                 'alpha_out_lin': alpha_out_lin,
                 'alpha_out_quad': alpha_out_quad,
-            })
+            }
+            
+            # Only store operators if explicitly requested (for final models)
+            if store_operators:
+                result['A'] = A.copy()
+                result['F'] = F.copy()
+                result['C'] = C.copy()
+                result['G'] = G.copy()
+                result['c'] = c.copy()
+            
+            results.append(result)
     
     return results
 
@@ -269,11 +332,11 @@ def parallel_hyperparameter_sweep(
     n_state_combos = len(state_param_combos)
     
     if rank == 0:
-        bprint(f"Parallel sweep: {n_state_combos} state combos across {size} ranks")
-        print(f"  State params: {len(ridge_alf_lin_all)} x {len(ridge_alf_quad_all)}")
-        print(f"  Output params: {len(gamma_reg_lin)} x {len(gamma_reg_quad)}")
+        logger.info(f"Parallel sweep: {n_state_combos} state combos across {size} ranks")
+        logger.info(f"  State params: {len(ridge_alf_lin_all)} x {len(ridge_alf_quad_all)}")
+        logger.info(f"  Output params: {len(gamma_reg_lin)} x {len(gamma_reg_quad)}")
         n_total = n_state_combos * len(gamma_reg_lin) * len(gamma_reg_quad)
-        print(f"  Total combinations: {n_total}")
+        logger.info(f"  Total combinations: {n_total}")
     
     # Distribute work across ranks
     combos_per_rank = n_state_combos // size
@@ -288,8 +351,7 @@ def parallel_hyperparameter_sweep(
     
     my_combos = state_param_combos[start_idx:end_idx]
     
-    if rank == 0:
-        print(f"  Rank {rank}: processing {len(my_combos)} state combos")
+    logger.debug(f"Rank {rank}: processing {len(my_combos)} state combos (indices {start_idx}-{end_idx})")
     
     # Evaluate assigned combinations
     local_results = []
@@ -322,34 +384,53 @@ def parallel_hyperparameter_sweep(
             s=s,
             n_steps=n_steps,
             training_end=training_end,
+            store_operators=False,  # Don't store operators during sweep
         )
         
         local_results.extend(results)
         
-        # Progress reporting (rank 0 only)
-        if rank == 0 and (i + 1) % max(1, len(my_combos) // 10) == 0:
+        # Progress reporting
+        if (i + 1) % max(1, len(my_combos) // 5) == 0:
             elapsed = time.time() - local_start_time
-            print(f"    Rank 0: {i+1}/{len(my_combos)} state combos ({elapsed:.1f}s)")
+            logger.info(f"Rank {rank}: {i+1}/{len(my_combos)} state combos ({elapsed:.1f}s)")
     
     local_elapsed = time.time() - local_start_time
+    logger.info(f"Rank {rank}: completed local sweep in {local_elapsed:.1f}s, {len(local_results)} results")
     
-    # Gather results to rank 0
+    # Synchronize before gather
+    comm.Barrier()
+    
+    # Gather results to rank 0 using a safer approach
+    # First, gather counts so rank 0 knows what to expect
+    local_count = len(local_results)
+    all_counts = comm.gather(local_count, root=0)
+    
+    if rank == 0:
+        logger.info(f"Gathering results from {size} ranks...")
+        total_expected = sum(all_counts)
+        logger.info(f"  Expecting {total_expected} total results")
+    
+    # Use gatherv-style approach: gather results in chunks to avoid memory issues
+    # Serialize results to avoid pickle overhead with complex objects
     all_results = comm.gather(local_results, root=0)
     
     if rank == 0:
         # Flatten results
         combined_results = []
-        for rank_results in all_results:
-            combined_results.extend(rank_results)
+        for rank_idx, rank_results in enumerate(all_results):
+            if rank_results is not None:
+                combined_results.extend(rank_results)
+            else:
+                logger.warning(f"Rank {rank_idx} returned None results")
         
         # Count statistics
         n_nan = sum(1 for r in combined_results if r.get('is_nan', False))
         n_valid = len(combined_results) - n_nan
         
-        bprint("Parallel sweep complete")
-        print(f"  Total models evaluated: {len(combined_results)}")
-        print(f"  Valid models: {n_valid}")
-        print(f"  NaN models: {n_nan}")
+        logger.info("Parallel sweep complete")
+        logger.info(f"  Total models evaluated: {len(combined_results)}")
+        logger.info(f"  Valid models: {n_valid}")
+        logger.info(f"  NaN models: {n_nan}")
         
         return combined_results
     else:
@@ -404,6 +485,88 @@ def select_best_models(
         raise ValueError(f"Unknown method: {method}")
     
     return collector.get_best()
+
+
+def recompute_operators_for_models(
+    selected_models: list,
+    D_state: np.ndarray,
+    D_state_2: np.ndarray,
+    Y_state: np.ndarray,
+    D_out_2: np.ndarray,
+    D_out: np.ndarray,
+    Y_Gamma: np.ndarray,
+    r: int,
+) -> list:
+    """
+    Recompute operator matrices for selected models.
+    
+    After the sweep, we only have hyperparameters stored for the best models.
+    This function recomputes the actual operator matrices (A, F, C, G, c) 
+    needed for saving and deployment.
+    
+    Parameters
+    ----------
+    selected_models : list
+        List of (score, model_params) tuples from select_best_models.
+    D_state, D_state_2, Y_state : np.ndarray
+        State learning matrices.
+    D_out_2, D_out, Y_Gamma : np.ndarray
+        Output learning matrices.
+    r : int
+        Number of POD modes.
+        
+    Returns
+    -------
+    list
+        List of (score, model_with_operators) tuples.
+    """
+    s = int(r * (r + 1) / 2)
+    d_state = r + s
+    d_out = r + s + 1
+    
+    results_with_operators = []
+    
+    for score, model_params in selected_models:
+        alpha_state_lin = model_params['alpha_state_lin']
+        alpha_state_quad = model_params['alpha_state_quad']
+        alpha_out_lin = model_params['alpha_out_lin']
+        alpha_out_quad = model_params['alpha_out_quad']
+        
+        # Recompute state operators
+        regg = np.zeros(d_state)
+        regg[:r] = alpha_state_lin
+        regg[r:r + s] = alpha_state_quad
+        regularizer = np.diag(regg)
+        D_state_reg = D_state_2 + regularizer
+        
+        O = np.linalg.solve(D_state_reg, np.dot(D_state.T, Y_state)).T
+        A = O[:, :r]
+        F = O[:, r:r + s]
+        
+        # Recompute output operators
+        regg_out = np.zeros(d_out)
+        regg_out[:r] = alpha_out_lin
+        regg_out[r:r + s] = alpha_out_quad
+        regg_out[r + s:] = alpha_out_lin
+        regularizer_out = np.diag(regg_out)
+        D_out_reg = D_out_2 + regularizer_out
+        
+        O_out = np.linalg.solve(D_out_reg, np.dot(D_out.T, Y_Gamma.T)).T
+        C = O_out[:, :r]
+        G = O_out[:, r:r + s]
+        c = O_out[:, r + s]
+        
+        # Create model with operators
+        model_with_ops = model_params.copy()
+        model_with_ops['A'] = A.copy()
+        model_with_ops['F'] = F.copy()
+        model_with_ops['C'] = C.copy()
+        model_with_ops['G'] = G.copy()
+        model_with_ops['c'] = c.copy()
+        
+        results_with_operators.append((score, model_with_ops))
+    
+    return results_with_operators
 
 
 def save_ensemble_models(
@@ -478,6 +641,8 @@ def save_ensemble_models(
 
 def main():
     """Main entry point for parallel hyperparameter sweep."""
+    global logger
+    
     parser = argparse.ArgumentParser(
         description="Parallel OpInf hyperparameter sweep for HPC"
     )
@@ -503,12 +668,16 @@ def main():
         "--threshold-std", type=float, default=0.30,
         help="Std error threshold (threshold method)"
     )
+    parser.add_argument(
+        "--log-file", type=str, default=None,
+        help="Path to log file (rank 0 only)"
+    )
     args = parser.parse_args()
     
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     
-    # Load configuration
+    # Load configuration first to get output_path for log file
     if args.config == "cluster":
         from config.cluster import (
             output_path, ridge_alf_lin_all, ridge_alf_quad_all,
@@ -522,13 +691,18 @@ def main():
         )
         from config.HW import r, training_end
     
+    # Set up logging
+    log_file = args.log_file or (output_path + "opinf_sweep.log")
+    logger = setup_logging(rank, log_file if rank == 0 else None)
+    
     if rank == 0:
-        bprint("=" * 60)
-        bprint("PARALLEL OPERATOR INFERENCE HYPERPARAMETER SWEEP")
-        bprint("=" * 60)
-        print(f"Configuration: {args.config}")
-        print(f"Selection method: {args.method}")
-        print(f"Number of MPI ranks: {comm.Get_size()}")
+        logger.info("=" * 60)
+        logger.info("PARALLEL OPERATOR INFERENCE HYPERPARAMETER SWEEP")
+        logger.info("=" * 60)
+        logger.info(f"Configuration: {args.config}")
+        logger.info(f"Selection method: {args.method}")
+        logger.info(f"Number of MPI ranks: {comm.Get_size()}")
+        logger.info(f"Log file: {log_file}")
     
     # =========================================================================
     # SHARED MEMORY DATA LOADING
@@ -543,8 +717,8 @@ def main():
     node_size = node_comm.Get_size()
     
     if rank == 0:
-        bprint(f"\nMemory optimization: {node_size} ranks sharing memory per node")
-        bprint("Loading pre-computed data (rank 0 per node)...")
+        logger.info(f"Memory optimization: {node_size} ranks sharing memory per node")
+        logger.info("Loading pre-computed data (rank 0 per node)...")
     
     s = int(r * (r + 1) / 2)
     d_state = r + s
@@ -552,6 +726,7 @@ def main():
     
     # ---------- Step 1: Rank 0 loads data and determines shapes ----------
     if rank == 0:
+        logger.info("Rank 0: Loading training data...")
         # Load projected training data
         Xhat_train_local = np.load(output_path + "X_hat_train_multi_IC.npy")
         if Xhat_train_local.shape[1] > r:
@@ -595,6 +770,7 @@ def main():
         D_out_2_local = D_out_local.T @ D_out_local
         
         # Load reference Gamma values
+        logger.info("Rank 0: Loading reference Gamma values...")
         from opinf_for_hw.utils.helpers import loader
         Gamma_n_list = []
         Gamma_c_list = []
@@ -631,9 +807,9 @@ def main():
             'std_Gamma_c_ref': std_Gamma_c_ref,
         }
         
-        bprint("Data loaded successfully")
-        print(f"  X_state shape: {X_state_local.shape}")
-        print(f"  D_out shape: {D_out_local.shape}")
+        logger.info("Data loaded successfully")
+        logger.info(f"  X_state shape: {X_state_local.shape}")
+        logger.info(f"  D_out shape: {D_out_local.shape}")
     else:
         shapes = None
         scalars = None
@@ -713,14 +889,14 @@ def main():
         node_root_comm.Free()
     
     if rank == 0:
-        bprint("Shared memory arrays populated on all nodes")
+        logger.info("Shared memory arrays populated on all nodes")
     
     # Synchronize before sweep
     comm.Barrier()
     
     # Run parallel sweep
     if rank == 0:
-        bprint("\nStarting parallel hyperparameter sweep...")
+        logger.info("Starting parallel hyperparameter sweep...")
     
     sweep_start = time.time()
     
@@ -752,9 +928,9 @@ def main():
     
     # Rank 0 handles model selection and saving
     if rank == 0:
-        bprint(f"\nSweep completed in {sweep_elapsed:.1f}s ({sweep_elapsed/60:.1f} min)")
+        logger.info(f"Sweep completed in {sweep_elapsed:.1f}s ({sweep_elapsed/60:.1f} min)")
         
-        # Select best models
+        # Select best models (without operators)
         best_models = select_best_models(
             results=results,
             method=args.method,
@@ -763,15 +939,29 @@ def main():
             threshold_std=args.threshold_std,
         )
         
-        bprint(f"\nSelected {len(best_models)} models using '{args.method}' method")
+        logger.info(f"Selected {len(best_models)} models using '{args.method}' method")
         
         if len(best_models) > 0:
-            print(f"  Best total error: {best_models[0][0]:.6e}")
-            print(f"  Worst selected: {best_models[-1][0]:.6e}")
+            logger.info(f"  Best total error: {best_models[0][0]:.6e}")
+            logger.info(f"  Worst selected: {best_models[-1][0]:.6e}")
             
-            # Save models
+            # Recompute operators for selected models
+            logger.info("Recomputing operators for selected models...")
+            best_models_with_ops = recompute_operators_for_models(
+                selected_models=best_models,
+                D_state=D_state,
+                D_state_2=D_state_2,
+                Y_state=Y_state,
+                D_out_2=D_out_2,
+                D_out=D_out,
+                Y_Gamma=Y_Gamma,
+                r=r,
+            )
+            logger.info(f"  Recomputed operators for {len(best_models_with_ops)} models")
+            
+            # Save models with operators
             filepath = save_ensemble_models(
-                best_models=best_models,
+                best_models=best_models_with_ops,
                 output_path=output_path,
                 r=r,
                 method=args.method,
@@ -779,13 +969,13 @@ def main():
                 threshold_std=args.threshold_std,
                 num_top_models=args.num_top_models,
             )
-            bprint(f"\nSaved ensemble to: {filepath}")
+            logger.info(f"Saved ensemble to: {filepath}")
         else:
-            bprint("WARNING: No models met selection criteria!")
+            logger.warning("No models met selection criteria!")
         
-        bprint("=" * 60)
-        bprint("SWEEP COMPLETE")
-        bprint("=" * 60)
+        logger.info("=" * 60)
+        logger.info("SWEEP COMPLETE")
+        logger.info("=" * 60)
     
     # Cleanup shared memory windows
     comm.Barrier()
@@ -797,6 +987,9 @@ def main():
     win_D_out_2.Free()
     win_Y_Gamma.Free()
     win_mean_Xhat.Free()
+    
+    if rank == 0:
+        logger.info("Shared memory windows freed. Exiting.")
 
 
 if __name__ == "__main__":
