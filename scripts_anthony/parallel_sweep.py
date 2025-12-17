@@ -676,6 +676,12 @@ def main():
     
     # ---------- Step 4: Rank 0 on each node fills shared memory ----------
     # Global rank 0 broadcasts data to node-rank-0 on all nodes
+    # ---------- Step 4: Rank 0 on each node fills shared memory ----------
+    # Global rank 0 broadcasts data to node-rank-0 on all nodes
+    
+    # Create communicator of just node-rank-0s
+    node_root_comm = comm.Split(color=0 if node_rank == 0 else MPI.UNDEFINED, key=rank)
+    
     if node_rank == 0:
         if rank == 0:
             # Rank 0 has the data, copy to shared memory
@@ -687,27 +693,24 @@ def main():
             D_out_2[:] = D_out_2_local
             Y_Gamma[:] = Y_Gamma_local
             mean_Xhat[:] = mean_Xhat_local
-        else:
-            # Other node-rank-0s receive via broadcast
-            pass
-    
-    # Broadcast arrays to node-rank-0 on each node
-    # Create communicator of just node-rank-0s
-    node_root_comm = comm.Split(color=0 if node_rank == 0 else MPI.UNDEFINED, key=rank)
-    
-    if node_rank == 0:
+        
         # Broadcast from global rank 0 to all node-rank-0s
-        node_root_comm.Bcast(X_state, root=0)
-        node_root_comm.Bcast(Y_state, root=0)
-        node_root_comm.Bcast(D_state, root=0)
-        node_root_comm.Bcast(D_state_2, root=0)
-        node_root_comm.Bcast(D_out, root=0)
-        node_root_comm.Bcast(D_out_2, root=0)
-        node_root_comm.Bcast(Y_Gamma, root=0)
-        node_root_comm.Bcast(mean_Xhat, root=0)
+        if node_root_comm != MPI.COMM_NULL:
+            node_root_comm.Bcast(X_state, root=0)
+            node_root_comm.Bcast(Y_state, root=0)
+            node_root_comm.Bcast(D_state, root=0)
+            node_root_comm.Bcast(D_state_2, root=0)
+            node_root_comm.Bcast(D_out, root=0)
+            node_root_comm.Bcast(D_out_2, root=0)
+            node_root_comm.Bcast(Y_Gamma, root=0)
+            node_root_comm.Bcast(mean_Xhat, root=0)
     
     # Synchronize within node so all ranks see the data
     node_comm.Barrier()
+    
+    # Free the node root communicator
+    if node_root_comm != MPI.COMM_NULL:
+        node_root_comm.Free()
     
     if rank == 0:
         bprint("Shared memory arrays populated on all nodes")
