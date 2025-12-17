@@ -3,8 +3,8 @@
 #SBATCH -o opinf_sweep_%j.out    # Output file (%j = job ID)
 #SBATCH -e opinf_sweep_%j.err    # Error file
 #SBATCH -p development                # Queue (partition)
-#SBATCH -N 2                     # Number of nodes
-#SBATCH -n 112                   # Total MPI tasks (56 cores per node on Frontera)
+#SBATCH -N 10                     # Number of nodes
+#SBATCH -n 560                   # Total MPI tasks (56 cores per node on Frontera)
 #SBATCH -t 02:00:00              # Time limit (HH:MM:SS)
 #SBATCH --mail-type=all    # Send email at begin and end of job
 #SBATCH --mail-user=anthony50102@tacc.utexas.edu
@@ -39,6 +39,7 @@ cd $WORK/repos/SciML_ROMs_Hasegawa_Wakatani
 
 # Install package in development mode (if not already done)
 pip install -e . --no-deps
+pip install -c constraints.txt h5netcdf
 
 # Print job info
 echo "=============================================="

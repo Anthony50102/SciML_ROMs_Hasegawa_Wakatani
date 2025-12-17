@@ -165,3 +165,8 @@ dmypy.json
 
 # Personal Notes
 *README_multi_IC.md
+
+# Job run things
+*.err*
+*.out*
+*remora*
