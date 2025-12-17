@@ -1,0 +1,64 @@
+
+The following have been reloaded with a version change:
+  1) python3/3.7.0 => python3/3.9.2
+
+[c201-002:200133:0:200133] Caught signal 11 (Segmentation fault: address not mapped to object at address 0x2b5f79e61000)
+==== backtrace (tid: 200133) ====
+ 0 0x00000000003b8dfa memcpy_mov1024_unaligned_load_nontemporal_store_avx2()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/shm/posix/eager/include/i_mpi_memcpy_avx2.c:2279
+ 1 0x00000000003b8dfa memcpy_loop_unaligned_load_nontemporal_store_avx2()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/shm/posix/eager/include/i_mpi_memcpy_avx2.c:4709
+ 2 0x00000000003b8dfa I_MPI_memcpy_nontemporal_avx2()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/shm/posix/eager/include/i_mpi_memcpy_avx2.c:5560
+ 3 0x0000000000a6e4d8 MPIDI_POSIX_eager_recv_memcpy()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/shm/posix/eager/include/intel_transport_recv.h:1319
+ 4 0x0000000000a6e4d8 intel_transport_progress()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/shm/posix/eager/include/intel_transport_progress.h:146
+ 5 0x00000000001ab5e5 MPIDI_SHM_progress()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/shm/src/../src/shm_noinline.h:106
+ 6 0x00000000001ab5e5 MPIDI_Progress_test()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/src/ch4_progress.c:203
+ 7 0x00000000001ab5e5 MPID_Progress_test()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/src/ch4_progress.c:236
+ 8 0x00000000001ab5e5 MPID_Progress_wait()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/src/ch4_progress.c:297
+ 9 0x00000000007f3bad MPIR_Waitall_impl()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpi/request/waitall.c:48
+10 0x00000000007f3bad MPID_Waitall()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/include/mpidpost.h:183
+11 0x00000000007f3bad MPIR_Waitall()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpi/request/waitall.c:173
+12 0x000000000033f83a MPIC_Waitall()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpi/coll/helper_fns.c:639
+13 0x00000000002cbcef MPIR_Gatherv_allcomm_linear_ssend()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpi/coll/intel/gatherv/gatherv_intra_linear_ssend.c:76
+14 0x0000000000189d0d MPIDI_NM_mpi_gatherv()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/netmod/include/../ofi/intel/ofi_coll.h:491
+15 0x0000000000189d0d MPIDI_Gatherv_intra_composition_alpha()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/src/intel/ch4_coll_impl.h:1925
+16 0x0000000000189d0d MPID_Gatherv_invoke()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/src/intel/ch4_coll_select_utils.c:2142
+17 0x0000000000189d0d MPIDI_coll_invoke()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/src/intel/ch4_coll_select_utils.c:3383
+18 0x0000000000154f1e MPIDI_coll_select()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/src/intel/ch4_coll_globals_default.c:129
+19 0x000000000021d2cc MPID_Gatherv()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpid/ch4/src/intel/ch4_coll.h:197
+20 0x00000000002cc679 PMPI_Gatherv()  /localdisk/jenkins/workspace/workspace/ch4-build-linux-2019/impi-ch4-build-linux_build/CONF/impi-ch4-build-linux-release/label/impi-ch4-build-linux-intel64/_buildspace/release/../../src/mpi/coll/gatherv/gatherv.c:378
+21 0x000000000005f099 __pyx_f_6mpi4py_3MPI_PyMPI_gather()  /tmp/pip-install-a657zw93/mpi4py_c59471460fc349ceba7e7dcdfb590f8a/src/mpi4py.MPI.c:53147
+22 0x00000000000fd2af __pyx_pf_6mpi4py_3MPI_4Comm_208gather()  /tmp/pip-install-a657zw93/mpi4py_c59471460fc349ceba7e7dcdfb590f8a/src/mpi4py.MPI.c:115849
+23 0x00000000000fd2af __pyx_pw_6mpi4py_3MPI_4Comm_209gather()  /tmp/pip-install-a657zw93/mpi4py_c59471460fc349ceba7e7dcdfb590f8a/src/mpi4py.MPI.c:115816
+24 0x0000000000209296 cfunction_call()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Objects/methodobject.c:539
+25 0x00000000001f1848 _PyObject_MakeTpCall()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Objects/call.c:191
+26 0x00000000002279aa _PyObject_VectorcallTstate()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/./Include/cpython/abstract.h:116
+27 0x00000000002279aa PyObject_Vectorcall()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/./Include/cpython/abstract.h:127
+28 0x00000000002279aa call_function()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/ceval.c:5072
+29 0x0000000000223076 _PyEval_EvalFrameDefault()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/ceval.c:3535
+30 0x0000000000220d48 _PyEval_EvalFrame()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/./Include/internal/pycore_ceval.h:40
+31 0x0000000000220d48 _PyEval_EvalCode()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/ceval.c:4327
+32 0x00000000001f153a _PyFunction_Vectorcall()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Objects/call.c:396
+33 0x000000000022793f _PyObject_VectorcallTstate()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/./Include/cpython/abstract.h:118
+34 0x000000000022793f PyObject_Vectorcall()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/./Include/cpython/abstract.h:127
+35 0x000000000022793f call_function()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/ceval.c:5072
+36 0x0000000000223076 _PyEval_EvalFrameDefault()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/ceval.c:3535
+37 0x00000000001f145d _PyEval_EvalFrame()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/./Include/internal/pycore_ceval.h:40
+38 0x00000000001f145d function_code_fastcall()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Objects/call.c:330
+39 0x00000000001f145d _PyFunction_Vectorcall()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Objects/call.c:367
+40 0x000000000022793f _PyObject_VectorcallTstate()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/./Include/cpython/abstract.h:118
+41 0x000000000022793f PyObject_Vectorcall()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/./Include/cpython/abstract.h:127
+42 0x000000000022793f call_function()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/ceval.c:5072
+43 0x00000000002234db _PyEval_EvalFrameDefault()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/ceval.c:3518
+44 0x0000000000220d48 _PyEval_EvalFrame()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/./Include/internal/pycore_ceval.h:40
+45 0x0000000000220d48 _PyEval_EvalCode()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/ceval.c:4327
+46 0x0000000000142eb3 _PyEval_EvalCodeWithName()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/ceval.c:4359
+47 0x0000000000142e42 PyEval_EvalCodeEx()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/ceval.c:4375
+48 0x0000000000142dd9 PyEval_EvalCode()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/ceval.c:826
+49 0x0000000000180b26 run_eval_code_obj()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/pythonrun.c:1218
+50 0x0000000000180b26 run_mod()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/pythonrun.c:1239
+51 0x0000000000180194 pyrun_file()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/pythonrun.c:1137
+52 0x000000000017fe44 pyrun_simple_file()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/pythonrun.c:449
+53 0x000000000017fcff PyRun_SimpleFileExFlags()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Python/pythonrun.c:482
+54 0x000000000019ca6a pymain_run_file()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Modules/main.c:373
+55 0x000000000019c164 pymain_run_python()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Modules/main.c:598
+56 0x000000000019be61 Py_RunMain()  /admin/build/admin/rpms/frontera/SOURCES/Python-3.9.2/Modules/main.c:677
+=================================
