@@ -530,80 +530,187 @@ def main():
         print(f"Selection method: {args.method}")
         print(f"Number of MPI ranks: {comm.Get_size()}")
     
-    # Load pre-computed data (all ranks need this)
+    # =========================================================================
+    # SHARED MEMORY DATA LOADING
+    # =========================================================================
+    # Use MPI shared memory to avoid duplicating large arrays on each rank.
+    # Only rank 0 on each node loads data; other ranks share that memory.
+    # =========================================================================
+    
+    # Create node-local communicator for shared memory
+    node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    node_rank = node_comm.Get_rank()
+    node_size = node_comm.Get_size()
+    
     if rank == 0:
-        bprint("\nLoading pre-computed data...")
-    
-    # Load POD basis
-    POD_data = np.load(output_path + "POD_multi_IC.npz")
-    U = POD_data['U'][:, :r]
-    
-    # Load projected training data
-    Xhat_train = np.load(output_path + "X_hat_train_multi_IC.npy")
-    if Xhat_train.shape[1] > r:
-        Xhat_train = Xhat_train[:, :r]
-    
-    # Load boundaries
-    boundaries_data = np.load(output_path + "data_boundaries.npz")
-    train_boundaries = boundaries_data['train_boundaries']
+        bprint(f"\nMemory optimization: {node_size} ranks sharing memory per node")
+        bprint("Loading pre-computed data (rank 0 per node)...")
     
     s = int(r * (r + 1) / 2)
+    d_state = r + s
+    d_out = r + s + 1
     
-    # Prepare state learning data (avoiding trajectory boundary transitions)
-    n_train_traj = len(train_boundaries) - 1
-    X_state_list = []
-    Y_state_list = []
+    # ---------- Step 1: Rank 0 loads data and determines shapes ----------
+    if rank == 0:
+        # Load projected training data
+        Xhat_train_local = np.load(output_path + "X_hat_train_multi_IC.npy")
+        if Xhat_train_local.shape[1] > r:
+            Xhat_train_local = Xhat_train_local[:, :r]
+        
+        # Load boundaries
+        boundaries_data = np.load(output_path + "data_boundaries.npz")
+        train_boundaries_local = boundaries_data['train_boundaries']
+        
+        # Prepare state learning data
+        n_train_traj = len(train_boundaries_local) - 1
+        X_state_list = []
+        Y_state_list = []
+        
+        for traj_idx in range(n_train_traj):
+            start_idx = train_boundaries_local[traj_idx]
+            end_idx = train_boundaries_local[traj_idx + 1]
+            Xhat_traj = Xhat_train_local[start_idx:end_idx, :]
+            X_state_list.append(Xhat_traj[:-1, :])
+            Y_state_list.append(Xhat_traj[1:, :])
+        
+        X_state_local = np.vstack(X_state_list)
+        Y_state_local = np.vstack(Y_state_list)
+        
+        X_state2 = get_x_sq(X_state_local)
+        D_state_local = np.concatenate((X_state_local, X_state2), axis=1)
+        D_state_2_local = D_state_local.T @ D_state_local
+        
+        # Prepare output learning data
+        X_out = Xhat_train_local
+        K = X_out.shape[0]
+        E = np.ones((K, 1))
+        
+        mean_Xhat_local = np.mean(X_out, axis=0)
+        Xhat_out = X_out - mean_Xhat_local[np.newaxis, :]
+        scaling_Xhat_local = np.maximum(np.abs(np.min(X_out)), np.abs(np.max(X_out)))
+        Xhat_out /= scaling_Xhat_local
+        Xhat_out2 = get_x_sq(Xhat_out)
+        
+        D_out_local = np.concatenate((Xhat_out, Xhat_out2, E), axis=1)
+        D_out_2_local = D_out_local.T @ D_out_local
+        
+        # Load reference Gamma values
+        from opinf_for_hw.utils.helpers import loader
+        Gamma_n_list = []
+        Gamma_c_list = []
+        for file_path in training_files:
+            fh = loader(file_path, ENGINE="h5netcdf")
+            Gamma_n_list.append(fh["gamma_n"].data)
+            Gamma_c_list.append(fh["gamma_c"].data)
+        
+        Gamma_n = np.concatenate(Gamma_n_list)
+        Gamma_c = np.concatenate(Gamma_c_list)
+        Y_Gamma_local = np.vstack((Gamma_n, Gamma_c))
+        
+        mean_Gamma_n_ref = np.mean(Gamma_n)
+        std_Gamma_n_ref = np.std(Gamma_n, ddof=1)
+        mean_Gamma_c_ref = np.mean(Gamma_c)
+        std_Gamma_c_ref = np.std(Gamma_c, ddof=1)
+        
+        # Collect shapes for broadcasting
+        shapes = {
+            'X_state': X_state_local.shape,
+            'Y_state': Y_state_local.shape,
+            'D_state': D_state_local.shape,
+            'D_state_2': D_state_2_local.shape,
+            'D_out': D_out_local.shape,
+            'D_out_2': D_out_2_local.shape,
+            'Y_Gamma': Y_Gamma_local.shape,
+            'mean_Xhat': mean_Xhat_local.shape,
+        }
+        scalars = {
+            'scaling_Xhat': scaling_Xhat_local,
+            'mean_Gamma_n_ref': mean_Gamma_n_ref,
+            'std_Gamma_n_ref': std_Gamma_n_ref,
+            'mean_Gamma_c_ref': mean_Gamma_c_ref,
+            'std_Gamma_c_ref': std_Gamma_c_ref,
+        }
+        
+        bprint("Data loaded successfully")
+        print(f"  X_state shape: {X_state_local.shape}")
+        print(f"  D_out shape: {D_out_local.shape}")
+    else:
+        shapes = None
+        scalars = None
     
-    for traj_idx in range(n_train_traj):
-        start_idx = train_boundaries[traj_idx]
-        end_idx = train_boundaries[traj_idx + 1]
-        Xhat_traj = Xhat_train[start_idx:end_idx, :]
-        X_state_list.append(Xhat_traj[:-1, :])
-        Y_state_list.append(Xhat_traj[1:, :])
+    # ---------- Step 2: Broadcast shapes and scalars to all ranks ----------
+    shapes = comm.bcast(shapes, root=0)
+    scalars = comm.bcast(scalars, root=0)
     
-    X_state = np.vstack(X_state_list)
-    Y_state = np.vstack(Y_state_list)
+    scaling_Xhat = scalars['scaling_Xhat']
+    mean_Gamma_n_ref = scalars['mean_Gamma_n_ref']
+    std_Gamma_n_ref = scalars['std_Gamma_n_ref']
+    mean_Gamma_c_ref = scalars['mean_Gamma_c_ref']
+    std_Gamma_c_ref = scalars['std_Gamma_c_ref']
     
-    X_state2 = get_x_sq(X_state)
-    D_state = np.concatenate((X_state, X_state2), axis=1)
-    D_state_2 = D_state.T @ D_state
+    # ---------- Step 3: Create shared memory windows on each node ----------
+    def create_shared_array(node_comm, shape, dtype=np.float64):
+        """Create a shared memory array accessible by all ranks on a node."""
+        size = int(np.prod(shape))
+        itemsize = np.dtype(dtype).itemsize
+        
+        if node_comm.Get_rank() == 0:
+            nbytes = size * itemsize
+        else:
+            nbytes = 0
+        
+        win = MPI.Win.Allocate_shared(nbytes, itemsize, comm=node_comm)
+        buf, itemsize = win.Shared_query(0)
+        arr = np.ndarray(buffer=buf, dtype=dtype, shape=shape)
+        return arr, win
     
-    # Prepare output learning data
-    X_out = Xhat_train
-    K = X_out.shape[0]
-    E = np.ones((K, 1))
+    # Allocate shared arrays
+    X_state, win_X_state = create_shared_array(node_comm, shapes['X_state'])
+    Y_state, win_Y_state = create_shared_array(node_comm, shapes['Y_state'])
+    D_state, win_D_state = create_shared_array(node_comm, shapes['D_state'])
+    D_state_2, win_D_state_2 = create_shared_array(node_comm, shapes['D_state_2'])
+    D_out, win_D_out = create_shared_array(node_comm, shapes['D_out'])
+    D_out_2, win_D_out_2 = create_shared_array(node_comm, shapes['D_out_2'])
+    Y_Gamma, win_Y_Gamma = create_shared_array(node_comm, shapes['Y_Gamma'])
+    mean_Xhat, win_mean_Xhat = create_shared_array(node_comm, shapes['mean_Xhat'])
     
-    mean_Xhat = np.mean(X_out, axis=0)
-    Xhat_out = X_out - mean_Xhat[np.newaxis, :]
-    scaling_Xhat = np.maximum(np.abs(np.min(X_out)), np.abs(np.max(X_out)))
-    Xhat_out /= scaling_Xhat
-    Xhat_out2 = get_x_sq(Xhat_out)
+    # ---------- Step 4: Rank 0 on each node fills shared memory ----------
+    # Global rank 0 broadcasts data to node-rank-0 on all nodes
+    if node_rank == 0:
+        if rank == 0:
+            # Rank 0 has the data, copy to shared memory
+            X_state[:] = X_state_local
+            Y_state[:] = Y_state_local
+            D_state[:] = D_state_local
+            D_state_2[:] = D_state_2_local
+            D_out[:] = D_out_local
+            D_out_2[:] = D_out_2_local
+            Y_Gamma[:] = Y_Gamma_local
+            mean_Xhat[:] = mean_Xhat_local
+        else:
+            # Other node-rank-0s receive via broadcast
+            pass
     
-    D_out = np.concatenate((Xhat_out, Xhat_out2, E), axis=1)
-    D_out_2 = D_out.T @ D_out
+    # Broadcast arrays to node-rank-0 on each node
+    # Create communicator of just node-rank-0s
+    node_root_comm = comm.Split(color=0 if node_rank == 0 else MPI.UNDEFINED, key=rank)
     
-    # Load reference Gamma values
-    from opinf_for_hw.utils.helpers import loader
-    Gamma_n_list = []
-    Gamma_c_list = []
-    for file_path in training_files:
-        fh = loader(file_path, ENGINE="h5netcdf")
-        Gamma_n_list.append(fh["gamma_n"].data)
-        Gamma_c_list.append(fh["gamma_c"].data)
+    if node_rank == 0:
+        # Broadcast from global rank 0 to all node-rank-0s
+        node_root_comm.Bcast(X_state, root=0)
+        node_root_comm.Bcast(Y_state, root=0)
+        node_root_comm.Bcast(D_state, root=0)
+        node_root_comm.Bcast(D_state_2, root=0)
+        node_root_comm.Bcast(D_out, root=0)
+        node_root_comm.Bcast(D_out_2, root=0)
+        node_root_comm.Bcast(Y_Gamma, root=0)
+        node_root_comm.Bcast(mean_Xhat, root=0)
     
-    Gamma_n = np.concatenate(Gamma_n_list)
-    Gamma_c = np.concatenate(Gamma_c_list)
-    Y_Gamma = np.vstack((Gamma_n, Gamma_c))
-    
-    mean_Gamma_n_ref = np.mean(Gamma_n)
-    std_Gamma_n_ref = np.std(Gamma_n, ddof=1)
-    mean_Gamma_c_ref = np.mean(Gamma_c)
-    std_Gamma_c_ref = np.std(Gamma_c, ddof=1)
+    # Synchronize within node so all ranks see the data
+    node_comm.Barrier()
     
     if rank == 0:
-        bprint("Data loaded successfully")
-        print(f"  X_state shape: {X_state.shape}")
-        print(f"  D_out shape: {D_out.shape}")
+        bprint("Shared memory arrays populated on all nodes")
     
     # Synchronize before sweep
     comm.Barrier()
@@ -676,6 +783,17 @@ def main():
         bprint("=" * 60)
         bprint("SWEEP COMPLETE")
         bprint("=" * 60)
+    
+    # Cleanup shared memory windows
+    comm.Barrier()
+    win_X_state.Free()
+    win_Y_state.Free()
+    win_D_state.Free()
+    win_D_state_2.Free()
+    win_D_out.Free()
+    win_D_out_2.Free()
+    win_Y_Gamma.Free()
+    win_mean_Xhat.Free()
 
 
 if __name__ == "__main__":
