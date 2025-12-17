@@ -36,4 +36,10 @@ ridge_alf_quad_all = np.linspace(1e9, 1e12, 10)
 gamma_reg_lin = np.linspace(1e-6, 1e-2, 10)
 gamma_reg_quad = np.linspace(1e-8, 1e-2, 10)
 
+ridge_alf_lin_all = np.linspace(1e-2, 1e3, 12)
+ridge_alf_quad_all = np.linspace(1e7, 1e12, 12)
+
+gamma_reg_lin = np.linspace(1e-8, 1e-2, 12)
+gamma_reg_quad = np.linspace(1e-10, 1e-2, 12)
+
 n_steps = 16001
