@@ -2,11 +2,12 @@
 #SBATCH -J opinf_sweep           # Job name
 #SBATCH -o opinf_sweep_%j.out    # Output file (%j = job ID)
 #SBATCH -e opinf_sweep_%j.err    # Error file
-#SBATCH -p normal                # Queue (partition)
+#SBATCH -p development                # Queue (partition)
 #SBATCH -N 2                     # Number of nodes
 #SBATCH -n 112                   # Total MPI tasks (56 cores per node on Frontera)
 #SBATCH -t 02:00:00              # Time limit (HH:MM:SS)
-#SBATCH -A YOUR_ALLOCATION       # Replace with your allocation name
+#SBATCH --mail-type=all    # Send email at begin and end of job
+#SBATCH --mail-user=anthony50102@tacc.utexas.edu
 
 # =============================================================================
 # OpInf Parallel Hyperparameter Sweep - TACC Frontera
@@ -23,9 +24,10 @@
 # =============================================================================
 
 # Load required modules
-module load intel/19.1.1
+module load intel/19.1.1 
 module load impi/19.0.9
-module load python3/3.9.7
+module load python3/3.9.2
+module load phdf5/1.10.4
 
 # Activate conda/virtual environment if needed
 # source activate your_env
@@ -33,10 +35,10 @@ module load python3/3.9.7
 # source /path/to/venv/bin/activate
 
 # Navigate to project directory
-cd $WORK/SciML_ROMs_Hasegawa_Wakatani
+cd $WORK/repos/SciML_ROMs_Hasegawa_Wakatani
 
 # Install package in development mode (if not already done)
-# pip install -e . --no-deps
+pip install -e . --no-deps
 
 # Print job info
 echo "=============================================="
@@ -50,7 +52,7 @@ echo "=============================================="
 
 # Run parallel sweep
 # Use ibrun for TACC systems (wrapper for mpirun)
-ibrun python -m scripts_anthony.parallel_sweep \
+ibrun python3 scripts_anthony/parallel_sweep.py \
     --config cluster \
     --method threshold \
     --threshold-mean 0.05 \
