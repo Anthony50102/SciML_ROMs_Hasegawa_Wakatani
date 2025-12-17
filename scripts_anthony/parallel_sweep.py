@@ -565,8 +565,166 @@ def recompute_operators_for_models(
         model_with_ops['c'] = c.copy()
         
         results_with_operators.append((score, model_with_ops))
-    
+
     return results_with_operators
+
+
+def parallel_recompute_operators_for_models(
+    selected_models: list,
+    D_state: np.ndarray,
+    D_state_2: np.ndarray,
+    Y_state: np.ndarray,
+    D_out_2: np.ndarray,
+    D_out: np.ndarray,
+    Y_Gamma: np.ndarray,
+    r: int,
+    comm: MPI.Comm = None,
+) -> list:
+    """
+    Recompute operator matrices for selected models in parallel.
+    
+    Distributes models across MPI ranks, recomputes operators, and gathers
+    results back to rank 0.
+    
+    Parameters
+    ----------
+    selected_models : list
+        List of (score, model_params) tuples from select_best_models.
+        Only rank 0 needs to provide this; other ranks can pass empty list.
+    D_state, D_state_2, Y_state : np.ndarray
+        State learning matrices (in shared memory).
+    D_out_2, D_out, Y_Gamma : np.ndarray
+        Output learning matrices (in shared memory).
+    r : int
+        Number of POD modes.
+    comm : MPI.Comm, optional
+        MPI communicator. Defaults to MPI.COMM_WORLD.
+        
+    Returns
+    -------
+    list
+        On rank 0: list of (score, model_with_operators) tuples, sorted by score.
+        On other ranks: empty list.
+    """
+    if comm is None:
+        comm = MPI.COMM_WORLD
+    
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+    
+    s = int(r * (r + 1) / 2)
+    d_state = r + s
+    d_out = r + s + 1
+    
+    # Broadcast number of models and model params from rank 0
+    if rank == 0:
+        n_models = len(selected_models)
+        # Extract just the hyperparameters (not operators) for broadcasting
+        model_params_list = [
+            {
+                'score': score,
+                'alpha_state_lin': m['alpha_state_lin'],
+                'alpha_state_quad': m['alpha_state_quad'],
+                'alpha_out_lin': m['alpha_out_lin'],
+                'alpha_out_quad': m['alpha_out_quad'],
+                'total_error': m['total_error'],
+                'mean_err_Gamma_n': m['mean_err_Gamma_n'],
+                'std_err_Gamma_n': m['std_err_Gamma_n'],
+                'mean_err_Gamma_c': m['mean_err_Gamma_c'],
+                'std_err_Gamma_c': m['std_err_Gamma_c'],
+            }
+            for score, m in selected_models
+        ]
+    else:
+        n_models = None
+        model_params_list = None
+    
+    n_models = comm.bcast(n_models, root=0)
+    model_params_list = comm.bcast(model_params_list, root=0)
+    
+    if n_models == 0:
+        return []
+    
+    # Distribute models across ranks
+    models_per_rank = n_models // size
+    remainder = n_models % size
+    
+    if rank < remainder:
+        start_idx = rank * (models_per_rank + 1)
+        end_idx = start_idx + models_per_rank + 1
+    else:
+        start_idx = rank * models_per_rank + remainder
+        end_idx = start_idx + models_per_rank
+    
+    my_models = model_params_list[start_idx:end_idx]
+    
+    if rank == 0:
+        logger.debug(f"Parallel recompute: {n_models} models across {size} ranks")
+    
+    # Recompute operators for assigned models
+    local_results = []
+    for params in my_models:
+        alpha_state_lin = params['alpha_state_lin']
+        alpha_state_quad = params['alpha_state_quad']
+        alpha_out_lin = params['alpha_out_lin']
+        alpha_out_quad = params['alpha_out_quad']
+        
+        # Recompute state operators
+        regg = np.zeros(d_state)
+        regg[:r] = alpha_state_lin
+        regg[r:r + s] = alpha_state_quad
+        regularizer = np.diag(regg)
+        D_state_reg = D_state_2 + regularizer
+        
+        O = np.linalg.solve(D_state_reg, np.dot(D_state.T, Y_state)).T
+        A = O[:, :r]
+        F = O[:, r:r + s]
+        
+        # Recompute output operators
+        regg_out = np.zeros(d_out)
+        regg_out[:r] = alpha_out_lin
+        regg_out[r:r + s] = alpha_out_quad
+        regg_out[r + s:] = alpha_out_lin
+        regularizer_out = np.diag(regg_out)
+        D_out_reg = D_out_2 + regularizer_out
+        
+        O_out = np.linalg.solve(D_out_reg, np.dot(D_out.T, Y_Gamma.T)).T
+        C = O_out[:, :r]
+        G = O_out[:, r:r + s]
+        c = O_out[:, r + s]
+        
+        # Build result with operators
+        model_with_ops = {
+            'A': A.copy(),
+            'F': F.copy(),
+            'C': C.copy(),
+            'G': G.copy(),
+            'c': c.copy(),
+            'alpha_state_lin': alpha_state_lin,
+            'alpha_state_quad': alpha_state_quad,
+            'alpha_out_lin': alpha_out_lin,
+            'alpha_out_quad': alpha_out_quad,
+            'total_error': params['total_error'],
+            'mean_err_Gamma_n': params['mean_err_Gamma_n'],
+            'std_err_Gamma_n': params['std_err_Gamma_n'],
+            'mean_err_Gamma_c': params['mean_err_Gamma_c'],
+            'std_err_Gamma_c': params['std_err_Gamma_c'],
+        }
+        local_results.append((params['score'], model_with_ops))
+    
+    # Gather results to rank 0
+    all_results = comm.gather(local_results, root=0)
+    
+    if rank == 0:
+        # Flatten and sort by score
+        combined = []
+        for rank_results in all_results:
+            combined.extend(rank_results)
+        # Sort by score (ascending - lower error is better)
+        combined.sort(key=lambda x: x[0])
+        return combined
+    else:
+        return []
 
 
 def save_ensemble_models(
@@ -944,21 +1102,29 @@ def main():
         if len(best_models) > 0:
             logger.info(f"  Best total error: {best_models[0][0]:.6e}")
             logger.info(f"  Worst selected: {best_models[-1][0]:.6e}")
-            
-            # Recompute operators for selected models
-            logger.info("Recomputing operators for selected models...")
-            best_models_with_ops = recompute_operators_for_models(
-                selected_models=best_models,
-                D_state=D_state,
-                D_state_2=D_state_2,
-                Y_state=Y_state,
-                D_out_2=D_out_2,
-                D_out=D_out,
-                Y_Gamma=Y_Gamma,
-                r=r,
-            )
-            logger.info(f"  Recomputed operators for {len(best_models_with_ops)} models")
-            
+    
+    # Parallel recompute operators for selected models (all ranks participate)
+    if rank == 0:
+        logger.info("Recomputing operators for selected models (parallel)...")
+    
+    recompute_start = time.time()
+    best_models_with_ops = parallel_recompute_operators_for_models(
+        selected_models=best_models if rank == 0 else [],
+        D_state=D_state,
+        D_state_2=D_state_2,
+        Y_state=Y_state,
+        D_out_2=D_out_2,
+        D_out=D_out,
+        Y_Gamma=Y_Gamma,
+        r=r,
+        comm=comm,
+    )
+    recompute_elapsed = time.time() - recompute_start
+    
+    if rank == 0:
+        logger.info(f"  Recomputed operators for {len(best_models_with_ops)} models in {recompute_elapsed:.1f}s")
+        
+        if len(best_models_with_ops) > 0:
             # Save models with operators
             filepath = save_ensemble_models(
                 best_models=best_models_with_ops,
