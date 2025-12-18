@@ -87,17 +87,23 @@ class PipelineConfig:
 def _build_reg_array(reg_config: dict) -> np.ndarray:
     """Build regularization parameter array from config dict."""
     scale = reg_config.get("scale", "linear")
+    
+    # Convert to float to handle string inputs from YAML
+    min_val = float(reg_config["min"])
+    max_val = float(reg_config["max"])
+    num_val = int(reg_config["num"])
+    
     if scale == "log":
         return np.logspace(
-            np.log10(reg_config["min"]),
-            np.log10(reg_config["max"]),
-            reg_config["num"]
+            np.log10(min_val),
+            np.log10(max_val),
+            num_val
         )
     else:
         return np.linspace(
-            reg_config["min"],
-            reg_config["max"],
-            reg_config["num"]
+            min_val,
+            max_val,
+            num_val
         )
 
 
