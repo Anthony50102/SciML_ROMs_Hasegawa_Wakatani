@@ -417,16 +417,35 @@ def load_reference_gamma(
     
     for file_path in cfg.training_files:
         fh = loader(file_path, ENGINE=cfg.engine)
-        Gamma_n_list.append(fh["gamma_n"].data)
-        Gamma_c_list.append(fh["gamma_c"].data)
+        
+        # Get original gamma data
+        gamma_n = fh["gamma_n"].data
+        gamma_c = fh["gamma_c"].data
+        
+        # Apply truncation (same logic as for snapshots)
+        if cfg.truncation_enabled:
+            max_snaps = compute_truncation_snapshots(
+                file_path, cfg.truncation_snapshots, cfg.truncation_time, cfg.dt
+            )
+            if max_snaps is not None:
+                n_time_original = len(gamma_n)
+                n_time = min(n_time_original, max_snaps)
+                gamma_n = gamma_n[:n_time]
+                gamma_c = gamma_c[:n_time]
+                logger.info(f"  Truncated gamma for {os.path.basename(file_path)}: "
+                          f"{n_time_original} -> {n_time}")
+        
+        Gamma_n_list.append(gamma_n)
+        Gamma_c_list.append(gamma_c)
     
     Gamma_n = np.concatenate(Gamma_n_list)
     Gamma_c = np.concatenate(Gamma_c_list)
     
     Y_Gamma = np.vstack((Gamma_n, Gamma_c))
     
-    logger.info(f"  Gamma_n shape: {Gamma_n.shape}")
-    logger.info(f"  Gamma_c shape: {Gamma_c.shape}")
+    logger.info(f"  Y_Gamma shape: {Y_Gamma.shape}")
+    logger.info(f"  Gamma_n: mean={np.mean(Gamma_n):.4e}, std={np.std(Gamma_n, ddof=1):.4e}")
+    logger.info(f"  Gamma_c: mean={np.mean(Gamma_c):.4e}, std={np.std(Gamma_c, ddof=1):.4e}")
     
     return {
         'Y_Gamma': Y_Gamma,
